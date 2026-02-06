@@ -12,6 +12,7 @@ from rich import box
 from . import __version__
 from .pricing import calculate_cost, get_pricing, list_supported_models
 from .db import log_usage, get_summary, get_model_breakdown, get_usage
+from .importer import import_sessions, find_session_dirs
 
 app = typer.Typer(
     name="tokenmeter",
@@ -285,6 +286,184 @@ def dashboard():
                 f"[green]{format_cost(r.cost)}[/green]"
             )
     
+    console.print()
+
+
+@app.command(name="import")
+def import_cmd(
+    path: Optional[str] = typer.Option(None, "--path", "-p", help="Path to sessions directory"),
+    app_name: str = typer.Option("clawdbot", "--app", "-a", help="App name (clawdbot, openclaw, claude-code)"),
+    dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Show what would be imported without writing"),
+    auto: bool = typer.Option(False, "--auto", help="Auto-discover and import all session directories"),
+):
+    """Import usage from Clawdbot/OpenClaw session files."""
+    from pathlib import Path as P
+    
+    console.print()
+    
+    if auto:
+        # Auto-discover all session directories
+        dirs = find_session_dirs()
+        if not dirs:
+            console.print("[yellow]No session directories found.[/yellow]")
+            console.print("Expected locations:")
+            console.print("  ~/.clawdbot/agents/*/sessions/")
+            console.print("  ~/.openclaw/agents/*/sessions/")
+            console.print("  ~/.claude/projects/*/")
+            return
+        
+        console.print(f"[bold]Found {len(dirs)} session source(s):[/bold]")
+        for d in dirs:
+            console.print(f"  📁 {d['base']}/{d['agent']} — {d['files']} files")
+        console.print()
+        
+        total_imported = 0
+        total_cost = 0.0
+        
+        for d in dirs:
+            agent_app = "claude-code" if ".claude" in str(d["path"]) else app_name
+            console.print(f"[cyan]Importing {d['agent']}...[/cyan]")
+            result = import_sessions(d["path"], app_name=agent_app, dry_run=dry_run)
+            total_imported += result["records_imported"]
+            total_cost += result["total_cost"]
+            
+            if result["records_imported"] > 0:
+                console.print(f"  ✅ {result['records_imported']} records ({format_cost(result['total_cost'])})")
+            elif result.get("records_skipped_dup", 0) > 0:
+                console.print(f"  ⏭️  {result['records_skipped_dup']} already imported")
+            else:
+                console.print(f"  ⚪ No new records")
+        
+        console.print()
+        prefix = "[DRY RUN] " if dry_run else ""
+        console.print(Panel(
+            f"{prefix}Imported [bold green]{total_imported}[/bold green] records\n"
+            f"Total cost: [bold green]{format_cost(total_cost)}[/bold green]",
+            title="🪙 Import Complete",
+            border_style="green",
+        ))
+        return
+    
+    if not path:
+        # Show available directories
+        dirs = find_session_dirs()
+        if dirs:
+            console.print("[bold]Available session directories:[/bold]")
+            for i, d in enumerate(dirs, 1):
+                console.print(f"  {i}. {d['path']} ({d['files']} files)")
+            console.print()
+            console.print("Use [bold]--path[/bold] to specify a directory, or [bold]--auto[/bold] to import all.")
+        else:
+            console.print("[yellow]No session directories found.[/yellow]")
+            console.print("Use [bold]--path[/bold] to specify the sessions directory manually.")
+        return
+    
+    sessions_dir = P(path)
+    prefix = "[DRY RUN] " if dry_run else ""
+    console.print(f"{prefix}Importing from: [bold]{sessions_dir}[/bold]")
+    console.print()
+    
+    result = import_sessions(sessions_dir, app_name=app_name, dry_run=dry_run)
+    
+    if result.get("error"):
+        console.print(f"[red]Error: {result['error']}[/red]")
+        return
+    
+    # Summary table
+    table = Table(
+        title=f"📥 {prefix}Import Results",
+        box=box.ROUNDED,
+        show_header=True,
+        header_style="bold cyan",
+    )
+    table.add_column("Metric", style="bold")
+    table.add_column("Value", justify="right")
+    
+    table.add_row("Files scanned", str(result["files_scanned"]))
+    table.add_row("Records found", f"{result['records_found']:,}")
+    table.add_row("Records imported", f"[green]{result['records_imported']:,}[/green]")
+    table.add_row("Duplicates skipped", f"[dim]{result['records_skipped_dup']:,}[/dim]")
+    table.add_row("Input tokens", format_tokens(result["total_input_tokens"]))
+    table.add_row("Output tokens", format_tokens(result["total_output_tokens"]))
+    table.add_row("Cache read tokens", format_tokens(result["total_cache_read_tokens"]))
+    table.add_row("Total cost (embedded)", f"[bold green]{format_cost(result['total_cost'])}[/bold green]")
+    table.add_row("API-equivalent cost", f"[yellow]{format_cost(result['total_api_equivalent_cost'])}[/yellow]")
+    
+    console.print(table)
+    
+    # Model breakdown
+    if result["by_model"]:
+        console.print()
+        model_table = Table(
+            title="By Model",
+            box=box.ROUNDED,
+            show_header=True,
+            header_style="bold cyan",
+        )
+        model_table.add_column("Model", style="bold")
+        model_table.add_column("Calls", justify="right")
+        model_table.add_column("Input", justify="right")
+        model_table.add_column("Output", justify="right")
+        model_table.add_column("Cache Read", justify="right")
+        model_table.add_column("Cost", justify="right", style="green")
+        
+        for model_key, data in sorted(result["by_model"].items(), key=lambda x: x[1]["cost"], reverse=True):
+            model_table.add_row(
+                model_key,
+                f"{data['calls']:,}",
+                format_tokens(data["input"]),
+                format_tokens(data["output"]),
+                format_tokens(data["cache_read"]),
+                format_cost(data["cost"]),
+            )
+        
+        console.print(model_table)
+    
+    if result["errors"]:
+        console.print()
+        console.print("[yellow]Warnings:[/yellow]")
+        for err in result["errors"][:5]:
+            console.print(f"  ⚠️  {err}")
+    
+    console.print()
+
+
+@app.command()
+def scan():
+    """Discover available session directories to import from."""
+    console.print()
+    dirs = find_session_dirs()
+    
+    if not dirs:
+        console.print("[yellow]No session directories found.[/yellow]")
+        console.print("\nExpected locations:")
+        console.print("  ~/.clawdbot/agents/*/sessions/")
+        console.print("  ~/.openclaw/agents/*/sessions/")
+        console.print("  ~/.claude/projects/*/")
+        return
+    
+    table = Table(
+        title="🔍 Discovered Session Sources",
+        box=box.ROUNDED,
+        show_header=True,
+        header_style="bold cyan",
+    )
+    table.add_column("Source", style="bold")
+    table.add_column("Agent")
+    table.add_column("Files", justify="right")
+    table.add_column("Path", style="dim")
+    
+    for d in dirs:
+        table.add_row(
+            d["base"],
+            d["agent"],
+            str(d["files"]),
+            str(d["path"]),
+        )
+    
+    console.print(table)
+    console.print()
+    console.print("Run [bold]tokenmeter import --auto[/bold] to import all, or [bold]--path <dir>[/bold] for specific ones.")
     console.print()
 
 
