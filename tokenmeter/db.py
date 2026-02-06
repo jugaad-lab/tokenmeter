@@ -110,6 +110,8 @@ def get_usage(
     end: Optional[datetime] = None,
     provider: Optional[str] = None,
     model: Optional[str] = None,
+    min_cost: Optional[float] = None,
+    exclude_zero_cost: bool = False,
 ) -> list[UsageRecord]:
     """Query usage records with optional filters."""
     conn = init_db()
@@ -129,6 +131,11 @@ def get_usage(
     if model:
         query += " AND model = ?"
         params.append(model)
+    if exclude_zero_cost:
+        query += " AND cost > 0"
+    if min_cost is not None:
+        query += " AND cost >= ?"
+        params.append(min_cost)
     
     query += " ORDER BY timestamp DESC"
     
@@ -166,6 +173,8 @@ def get_usage(
 def get_summary(
     period: str = "day",
     provider: Optional[str] = None,
+    min_cost: Optional[float] = None,
+    exclude_zero_cost: bool = False,
 ) -> dict:
     """Get aggregated summary for a time period."""
     now = datetime.now()
@@ -179,7 +188,14 @@ def get_summary(
     else:
         start = None
     
-    records = get_usage(start=start, provider=provider)
+    records = get_usage(start=start, provider=provider, min_cost=min_cost, exclude_zero_cost=exclude_zero_cost)
+    
+    # Count excluded records for display
+    if exclude_zero_cost or min_cost is not None:
+        all_records = get_usage(start=start, provider=provider)
+        excluded_count = len(all_records) - len(records)
+    else:
+        excluded_count = 0
     
     # Aggregate by provider
     by_provider = {}
