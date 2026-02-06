@@ -1,3 +1,9 @@
+---
+name: tokenmeter
+description: Track AI token usage and costs across all providers - locally, privately. Prove Claude Max plan ROI.
+metadata: {"clawdbot":{"emoji":"📊"}}
+---
+
 # tokenmeter - AI Usage & Cost Tracking for OpenClaw
 
 Track your AI token usage and costs across all providers — locally, privately.
