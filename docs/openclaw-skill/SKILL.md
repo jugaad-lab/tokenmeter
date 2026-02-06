@@ -17,59 +17,105 @@ All data stays local (SQLite at `~/.tokenmeter/usage.db`). No telemetry, no clou
 
 ## Installation
 
-**For bot/agent (admin runs once):**
+**The bot handles everything automatically.**
+
+When first needed, the bot will:
 
 ```bash
-cd ~/clawd
-git clone https://github.com/jugaad-lab/tokenmeter.git
+# 1. Clone repo if it doesn't exist
+if [ ! -d ~/clawd/tokenmeter ]; then
+  cd ~/clawd
+  git clone https://github.com/jugaad-lab/tokenmeter.git
+fi
+
+# 2. Setup Python venv if it doesn't exist
+cd ~/clawd/tokenmeter
+if [ ! -d ".venv" ]; then
+  python3 -m venv .venv
+  source .venv/bin/activate
+  pip install -e .
+fi
+
+# 3. Activate and use
+source .venv/bin/activate
+tokenmeter import --auto
 ```
 
-The repo contains:
-- Python package (tokenmeter CLI)
-- Documentation (this file is in `docs/openclaw-skill/`)
-- Example scripts
+**After first setup:** Bot just activates venv and runs commands.
 
-**First-time setup (bot does this automatically when needed):**
+**No admin action needed** - the bot clones, installs, and configures automatically when you first ask it to check usage or costs.
 
+---
+
+## How the Bot Uses This Tool
+
+### When You Ask: "How much did I spend this week?"
+
+**Step 1: Bot reads this SKILL.md**
+- Skill matching triggers on keywords: "spend", "cost", "usage", "tokens"
+- Bot loads this entire file into context
+
+**Step 2: Bot checks if tokenmeter exists**
 ```bash
-cd ~/clawd/tokenmeter
-
-# Setup venv if it doesn't exist
-if [ ! -d ".venv" ]; then
+if [ ! -d ~/clawd/tokenmeter ]; then
+  cd ~/clawd
+  git clone https://github.com/jugaad-lab/tokenmeter.git
+  cd tokenmeter
   python3 -m venv .venv
   source .venv/bin/activate
   pip install -e .
 fi
 ```
 
-**After first setup:** Bot just activates venv and runs commands.
+**Step 3: Bot imports latest usage**
+```bash
+cd ~/clawd/tokenmeter
+source .venv/bin/activate
+tokenmeter import --auto
+```
+
+This reads all OpenClaw session files and logs them to the database.
+
+**Step 4: Bot runs the appropriate command**
+```bash
+tokenmeter costs --period week
+```
+
+**Step 5: Bot parses the output**
+```
+Model                    Cost      % of Total
+────────────────────────────────────────────
+anthropic/claude-opus-4  $741.95   65.0%
+anthropic/claude-sonnet-4 $400.26  35.0%
+────────────────────────────────────────────
+Total                    $1,142.22
+```
+
+**Step 6: Bot responds to you in plain English**
+> "You spent $1,142 this week (API-equivalent). Opus cost $742 (65%), Sonnet cost $400 (35%). Your Max plan ($100/month = ~$25/week) saved you $1,117 this week."
 
 ---
 
-## Usage (Bot Commands)
+## Bot Command Reference
 
-**Standard pattern for all tokenmeter commands:**
-
+**Standard pattern:**
 ```bash
 cd ~/clawd/tokenmeter && source .venv/bin/activate && tokenmeter [command]
 ```
 
-**Examples:**
+**Common commands the bot will use:**
 ```bash
 # Import latest usage
-cd ~/clawd/tokenmeter && source .venv/bin/activate && tokenmeter import --auto
+tokenmeter import --auto
 
 # Quick overview
-cd ~/clawd/tokenmeter && source .venv/bin/activate && tokenmeter dashboard
+tokenmeter dashboard
 
 # Weekly breakdown
-cd ~/clawd/tokenmeter && source .venv/bin/activate && tokenmeter costs --period week
-```
+tokenmeter costs --period week
 
-**Tip:** Bot can create an alias for shorter commands:
-```bash
-alias tm='cd ~/clawd/tokenmeter && source .venv/bin/activate && tokenmeter'
-# Then just: tm dashboard
+# Monthly summary
+tokenmeter summary --period month
 ```
 
 ---
