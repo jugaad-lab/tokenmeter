@@ -1,12 +1,21 @@
 ---
 name: tokenmeter
-description: Track AI token usage and costs across all providers - locally, privately. Prove Claude Max plan ROI.
+description: "Track AI token usage and costs across providers. Import sessions, view dashboard, costs breakdown, and compare Max plan savings."
+user-invocable: true
 metadata: {"clawdbot":{"emoji":"📊"}}
 ---
 
 # tokenmeter - AI Usage & Cost Tracking for OpenClaw
 
 Track your AI token usage and costs across all providers — locally, privately.
+
+## Slash Command Examples
+
+- `/tokenmeter` — show today's dashboard
+- `/tokenmeter how much did we spend this week?` — weekly cost report
+- `/tokenmeter costs breakdown by model` — model split analysis
+- `/tokenmeter import latest sessions` — pull in new usage data
+- `/tokenmeter compare max plan savings` — show API vs subscription savings
 
 ## Overview
 
