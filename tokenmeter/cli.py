@@ -1,7 +1,7 @@
 """CLI interface for tokenmeter."""
 
 import typer
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 from rich.console import Console
 from rich.table import Table
@@ -13,6 +13,7 @@ from . import __version__
 from .pricing import calculate_cost, get_pricing, list_supported_models
 from .db import log_usage, get_summary, get_model_breakdown, get_usage
 from .importer import import_sessions, find_session_dirs
+from .time_utils import resolve_time_range
 
 app = typer.Typer(
     name="tokenmeter",
@@ -72,12 +73,26 @@ def log(
 
 @app.command()
 def summary(
-    period: str = typer.Option("day", "--period", "-p", help="Time period (day, week, month)"),
+    period: Optional[str] = typer.Option(None, "--period", "-p", help="Time period (day, week, month)"),
+    since: Optional[str] = typer.Option(None, "--since", help="Start time (e.g., '9am', 'yesterday', '2026-02-06 09:00')"),
+    after: Optional[str] = typer.Option(None, "--after", help="Start time (alias for --since)"),
+    between: Optional[List[str]] = typer.Option(None, "--between", help="Time range (e.g., '9am' '5pm')"),
     provider: Optional[str] = typer.Option(None, "--provider", help="Filter by provider"),
 ):
     """Show usage summary."""
+    try:
+        start, end = resolve_time_range(
+            period=period or "day",
+            since=since,
+            after=after,
+            between=tuple(between) if between and len(between) == 2 else None,
+        )
+    except ValueError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+    
     console.print()
-    data = _render_summary_table(period=period, provider=provider)
+    data = _render_summary_table(start=start, end=end, provider=provider)
     
     if data["totals"]["requests"] == 0:
         console.print("\n[dim]No usage recorded for this period. Use 'tokenmeter log' to add records.[/dim]")
@@ -86,12 +101,32 @@ def summary(
 
 @app.command()
 def costs(
-    period: str = typer.Option("day", "--period", "-p", help="Time period (day, week, month)"),
+    period: Optional[str] = typer.Option(None, "--period", "-p", help="Time period (day, week, month)"),
+    since: Optional[str] = typer.Option(None, "--since", help="Start time (e.g., '9am', 'yesterday')"),
+    after: Optional[str] = typer.Option(None, "--after", help="Start time (alias for --since)"),
+    between: Optional[List[str]] = typer.Option(None, "--between", help="Time range (e.g., '9am' '5pm')"),
 ):
     """Show cost breakdown by model."""
-    data = get_model_breakdown(period=period)
+    try:
+        start, end = resolve_time_range(
+            period=period or "day",
+            since=since,
+            after=after,
+            between=tuple(between) if between and len(between) == 2 else None,
+        )
+    except ValueError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
     
-    period_label = {"day": "Today", "week": "This Week", "month": "This Month"}.get(period, period)
+    data = get_model_breakdown(start=start, end=end)
+    
+    # Generate label
+    if start and end:
+        period_label = f"{start.strftime('%m/%d %H:%M')} - {end.strftime('%m/%d %H:%M')}"
+    elif start:
+        period_label = f"since {start.strftime('%m/%d %H:%M')}"
+    else:
+        period_label = {"day": "today", "week": "this week", "month": "this month"}.get(period or "day", period or "day")
     
     table = Table(
         title=f"💰 Cost Breakdown — {period_label}",
@@ -200,11 +235,22 @@ def history(
     console.print()
 
 
-def _render_summary_table(period: str = "day", provider: Optional[str] = None):
+def _render_summary_table(
+    period: Optional[str] = None,
+    start: Optional[datetime] = None,
+    end: Optional[datetime] = None,
+    provider: Optional[str] = None,
+):
     """Render summary table (internal helper)."""
-    data = get_summary(period=period, provider=provider)
+    data = get_summary(period=period, start=start, end=end, provider=provider)
     
-    period_label = {"day": "Today", "week": "This Week", "month": "This Month"}.get(period, period)
+    # Generate label
+    if start and end:
+        period_label = f"{start.strftime('%m/%d %H:%M')} - {end.strftime('%m/%d %H:%M')}"
+    elif start:
+        period_label = f"since {start.strftime('%m/%d %H:%M')}"
+    else:
+        period_label = {"day": "today", "week": "this week", "month": "this month"}.get(period or "day", period or "day")
     
     table = Table(
         title=f"🪙 tokenmeter — {period_label}",

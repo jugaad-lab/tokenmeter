@@ -164,22 +164,24 @@ def get_usage(
 
 
 def get_summary(
-    period: str = "day",
+    period: Optional[str] = None,
+    start: Optional[datetime] = None,
+    end: Optional[datetime] = None,
     provider: Optional[str] = None,
 ) -> dict:
-    """Get aggregated summary for a time period."""
+    """Get aggregated summary for a time period or custom range."""
     now = datetime.now()
     
-    if period == "day":
-        start = datetime.combine(date.today(), datetime.min.time())
-    elif period == "week":
-        start = datetime.combine(date.today() - timedelta(days=7), datetime.min.time())
-    elif period == "month":
-        start = datetime.combine(date.today() - timedelta(days=30), datetime.min.time())
-    else:
-        start = None
+    # Use explicit start/end if provided
+    if start is None and period:
+        if period == "day":
+            start = datetime.combine(date.today(), datetime.min.time())
+        elif period == "week":
+            start = datetime.combine(date.today() - timedelta(days=7), datetime.min.time())
+        elif period == "month":
+            start = datetime.combine(date.today() - timedelta(days=30), datetime.min.time())
     
-    records = get_usage(start=start, provider=provider)
+    records = get_usage(start=start, end=end, provider=provider)
     
     # Aggregate by provider
     by_provider = {}
@@ -226,20 +228,24 @@ def get_summary(
     }
 
 
-def get_model_breakdown(period: str = "day") -> dict:
+def get_model_breakdown(
+    period: Optional[str] = None,
+    start: Optional[datetime] = None,
+    end: Optional[datetime] = None,
+) -> dict:
     """Get usage breakdown by model."""
     now = datetime.now()
     
-    if period == "day":
-        start = datetime.combine(date.today(), datetime.min.time())
-    elif period == "week":
-        start = datetime.combine(date.today() - timedelta(days=7), datetime.min.time())
-    elif period == "month":
-        start = datetime.combine(date.today() - timedelta(days=30), datetime.min.time())
-    else:
-        start = None
+    # Use explicit start/end if provided
+    if start is None and period:
+        if period == "day":
+            start = datetime.combine(date.today(), datetime.min.time())
+        elif period == "week":
+            start = datetime.combine(date.today() - timedelta(days=7), datetime.min.time())
+        elif period == "month":
+            start = datetime.combine(date.today() - timedelta(days=30), datetime.min.time())
     
-    records = get_usage(start=start)
+    records = get_usage(start=start, end=end)
     
     # Aggregate by model
     by_model = {}
