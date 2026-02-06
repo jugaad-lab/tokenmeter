@@ -100,7 +100,7 @@ cd ~/clawd/skills/tokenmeter && source .venv/bin/activate
 
 **Empty dashboard?**
 - Check if session files exist: `ls ~/.clawdbot/agents/*/sessions/*.jsonl`
-- Run import: `tokenmeter import openclaw` (once available)
+- Run import: `tokenmeter import --auto`
 - Or log manually: `tokenmeter log ...`
 
 ---
