@@ -118,6 +118,38 @@ tokenmeter alert --daily 5.00 --weekly 25.00
 
 All data stored in `~/.tokenmeter/usage.db` (SQLite).
 
+### Database Schema
+
+Each usage record contains:
+
+| Field | Description |
+|-------|-------------|
+| `timestamp` | When the API call happened |
+| **`provider`** | **API provider** (anthropic, openai, google, azure) |
+| `model` | Model name (claude-opus-4, gpt-4o, etc.) |
+| **`app`** | **Session/workspace label** (clawdbot, claude-code, openclaw) |
+| `input_tokens` | Input tokens consumed |
+| `output_tokens` | Output tokens generated |
+| `cache_read_tokens` | Tokens read from cache |
+| `cache_write_tokens` | Tokens written to cache |
+| `cost` | Calculated cost in USD |
+| `source` | How this was logged (import, manual, proxy) |
+
+#### Understanding `app` vs `provider`
+
+- **`provider`**: The actual API provider (who you're paying)
+  - Example: `anthropic` when using Claude via API
+  - Example: `openai` when using GPT-4
+  
+- **`app`**: The tool/session that made the request (for organizational purposes)
+  - Example: `clawdbot` - requests from your OpenClaw bot
+  - Example: `claude-code` - requests from Claude Code CLI
+  - Example: Custom label you set with `--app` flag
+
+**Common confusion:** After migrating from "Clawdbot" to "OpenClaw", you may see sessions labeled `app=clawdbot` but with `provider=anthropic`. This is correct — the `app` label persists from the original session name, while `provider` shows who's actually billing you.
+
+**Note:** `.openclaw` and `.clawdbot` directories may point to the same data (symlink). Both are imported as `app=clawdbot` for historical sessions.
+
 ## Privacy
 
 - **Zero telemetry** — nothing sent anywhere
