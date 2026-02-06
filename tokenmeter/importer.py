@@ -37,11 +37,13 @@ def _normalize_model(model: str) -> str:
     """
     model = model.lower()
     
-    # Anthropic model mapping
+    # Anthropic model mapping — catch all dated variants
     mappings = {
         "claude-opus-4-5": "claude-opus-4",
         "claude-opus-4-6": "claude-opus-4",
         "claude-opus-4-5-20250414": "claude-opus-4",
+        "claude-opus-4-5-20251101": "claude-opus-4",
+        "claude-opus-4-6-20250618": "claude-opus-4",
         "claude-sonnet-4-20250514": "claude-sonnet-4",
         "claude-sonnet-4-5-20250514": "claude-sonnet-4",
         "claude-sonnet-4-5": "claude-sonnet-4",
@@ -50,8 +52,23 @@ def _normalize_model(model: str) -> str:
         "claude-3-5-haiku-latest": "claude-3.5-haiku",
         "claude-3-5-haiku-20241022": "claude-3.5-haiku",
         "claude-haiku-3-5-latest": "claude-3.5-haiku",
+        "claude-haiku-4-5-20251015": "claude-3.5-haiku",
         "claude-3-opus-20240229": "claude-3-opus",
     }
+    
+    # Fuzzy fallback: if not in exact map, try prefix matching
+    if model not in mappings:
+        for prefix, normalized in [
+            ("claude-opus-4", "claude-opus-4"),
+            ("claude-sonnet-4", "claude-sonnet-4"),
+            ("claude-3.5-sonnet", "claude-3.5-sonnet"),
+            ("claude-3-5-sonnet", "claude-3.5-sonnet"),
+            ("claude-3.5-haiku", "claude-3.5-haiku"),
+            ("claude-3-5-haiku", "claude-3.5-haiku"),
+            ("claude-haiku", "claude-3.5-haiku"),
+        ]:
+            if model.startswith(prefix):
+                return normalized
     
     return mappings.get(model, model)
 
