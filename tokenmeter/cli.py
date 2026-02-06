@@ -79,6 +79,8 @@ def summary(
     after: Optional[str] = typer.Option(None, "--after", help="Start time (alias for --since)"),
     between: Optional[List[str]] = typer.Option(None, "--between", help="Time range (e.g., '9am' '5pm')"),
     provider: Optional[str] = typer.Option(None, "--provider", help="Filter by provider"),
+    exclude_zero_cost: bool = typer.Option(False, "--exclude-zero-cost", help="Exclude records with zero cost"),
+    min_cost: Optional[float] = typer.Option(None, "--min-cost", help="Minimum cost threshold"),
 ):
     """Show usage summary."""
     try:
@@ -93,10 +95,12 @@ def summary(
         raise typer.Exit(1)
     
     console.print()
-    data = _render_summary_table(start=start, end=end, provider=provider)
+    data = _render_summary_table(start=start, end=end, provider=provider, min_cost=min_cost, exclude_zero_cost=exclude_zero_cost)
     
     if data["totals"]["requests"] == 0:
         console.print("\n[dim]No usage recorded for this period. Use 'tokenmeter log' to add records.[/dim]")
+    elif data.get("excluded_count", 0) > 0:
+        console.print(f"\n[dim]({data['excluded_count']} zero-cost records excluded)[/dim]")
     console.print()
 
 
@@ -106,6 +110,8 @@ def costs(
     since: Optional[str] = typer.Option(None, "--since", help="Start time (e.g., '9am', 'yesterday')"),
     after: Optional[str] = typer.Option(None, "--after", help="Start time (alias for --since)"),
     between: Optional[List[str]] = typer.Option(None, "--between", help="Time range (e.g., '9am' '5pm')"),
+    exclude_zero_cost: bool = typer.Option(False, "--exclude-zero-cost", help="Exclude records with zero cost"),
+    min_cost: Optional[float] = typer.Option(None, "--min-cost", help="Minimum cost threshold"),
 ):
     """Show cost breakdown by model."""
     try:
@@ -119,7 +125,7 @@ def costs(
         console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(1)
     
-    data = get_model_breakdown(start=start, end=end)
+    data = get_model_breakdown(start=start, end=end, min_cost=min_cost, exclude_zero_cost=exclude_zero_cost)
     
     # Generate label
     if start and end:
@@ -159,6 +165,8 @@ def costs(
     
     if not data["models"]:
         console.print("\n[dim]No usage recorded. Use 'tokenmeter log' to add records.[/dim]")
+    elif data.get("excluded_count", 0) > 0:
+        console.print(f"\n[dim]({data['excluded_count']} zero-cost records excluded)[/dim]")
     console.print()
 
 
@@ -241,9 +249,11 @@ def _render_summary_table(
     start: Optional[datetime] = None,
     end: Optional[datetime] = None,
     provider: Optional[str] = None,
+    min_cost: Optional[float] = None,
+    exclude_zero_cost: bool = False,
 ):
     """Render summary table (internal helper)."""
-    data = get_summary(period=period, start=start, end=end, provider=provider)
+    data = get_summary(period=period, start=start, end=end, provider=provider, min_cost=min_cost, exclude_zero_cost=exclude_zero_cost)
     
     # Generate label
     if start and end:

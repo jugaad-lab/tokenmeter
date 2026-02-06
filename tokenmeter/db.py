@@ -110,6 +110,8 @@ def get_usage(
     end: Optional[datetime] = None,
     provider: Optional[str] = None,
     model: Optional[str] = None,
+    min_cost: Optional[float] = None,
+    exclude_zero_cost: bool = False,
 ) -> list[UsageRecord]:
     """Query usage records with optional filters."""
     conn = init_db()
@@ -129,6 +131,11 @@ def get_usage(
     if model:
         query += " AND model = ?"
         params.append(model)
+    if exclude_zero_cost:
+        query += " AND cost > 0"
+    elif min_cost is not None:
+        query += " AND cost >= ?"
+        params.append(min_cost)
     
     query += " ORDER BY timestamp DESC"
     
@@ -168,6 +175,8 @@ def get_summary(
     start: Optional[datetime] = None,
     end: Optional[datetime] = None,
     provider: Optional[str] = None,
+    min_cost: Optional[float] = None,
+    exclude_zero_cost: bool = False,
 ) -> dict:
     """Get aggregated summary for a time period or custom range."""
     now = datetime.now()
@@ -181,7 +190,15 @@ def get_summary(
         elif period == "month":
             start = datetime.combine(date.today() - timedelta(days=30), datetime.min.time())
     
-    records = get_usage(start=start, end=end, provider=provider)
+    # Get filtered records
+    records = get_usage(start=start, end=end, provider=provider, min_cost=min_cost, exclude_zero_cost=exclude_zero_cost)
+    
+    # Count excluded for display
+    if exclude_zero_cost or min_cost is not None:
+        all_records = get_usage(start=start, end=end, provider=provider)
+        excluded_count = len(all_records) - len(records)
+    else:
+        excluded_count = 0
     
     # Aggregate by provider
     by_provider = {}
@@ -224,7 +241,8 @@ def get_summary(
             "total_tokens": total_input + total_output,
             "cost": total_cost,
             "requests": len(records),
-        }
+        },
+        "excluded_count": excluded_count,
     }
 
 
@@ -232,6 +250,8 @@ def get_model_breakdown(
     period: Optional[str] = None,
     start: Optional[datetime] = None,
     end: Optional[datetime] = None,
+    min_cost: Optional[float] = None,
+    exclude_zero_cost: bool = False,
 ) -> dict:
     """Get usage breakdown by model."""
     now = datetime.now()
@@ -245,7 +265,14 @@ def get_model_breakdown(
         elif period == "month":
             start = datetime.combine(date.today() - timedelta(days=30), datetime.min.time())
     
-    records = get_usage(start=start, end=end)
+    records = get_usage(start=start, end=end, min_cost=min_cost, exclude_zero_cost=exclude_zero_cost)
+    
+    # Count excluded
+    if exclude_zero_cost or min_cost is not None:
+        all_records = get_usage(start=start, end=end)
+        excluded_count = len(all_records) - len(records)
+    else:
+        excluded_count = 0
     
     # Aggregate by model
     by_model = {}
@@ -272,4 +299,5 @@ def get_model_breakdown(
     return {
         "period": period,
         "models": list(by_model.values()),
+        "excluded_count": excluded_count,
     }
