@@ -235,10 +235,10 @@ def import_sessions(
                         # Log the usage record
                         conn.execute(
                             """INSERT INTO usage 
-                               (timestamp, provider, model, input_tokens, output_tokens, cost, source, app)
-                               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                               (timestamp, provider, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost, source, app)
+                               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                             (ts.isoformat(), provider, model, input_tokens, output_tokens,
-                             final_cost, "import", app_name)
+                             cache_read, cache_write, final_cost, "import", app_name)
                         )
                         # Mark as imported
                         conn.execute(

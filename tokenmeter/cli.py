@@ -215,6 +215,8 @@ def _render_summary_table(period: str = "day", provider: Optional[str] = None):
     table.add_column("Provider", style="bold")
     table.add_column("Input", justify="right")
     table.add_column("Output", justify="right")
+    table.add_column("Cache R", justify="right", style="dim")
+    table.add_column("Cache W", justify="right", style="dim")
     table.add_column("Total", justify="right")
     table.add_column("Cost", justify="right", style="green")
     table.add_column("Requests", justify="right")
@@ -224,6 +226,8 @@ def _render_summary_table(period: str = "day", provider: Optional[str] = None):
             prov.capitalize(),
             format_tokens(stats["input_tokens"]),
             format_tokens(stats["output_tokens"]),
+            format_tokens(stats.get("cache_read_tokens", 0)),
+            format_tokens(stats.get("cache_write_tokens", 0)),
             format_tokens(stats["total_tokens"]),
             format_cost(stats["cost"]),
             str(stats["requests"]),
@@ -236,6 +240,8 @@ def _render_summary_table(period: str = "day", provider: Optional[str] = None):
             "[bold]TOTAL[/bold]",
             format_tokens(totals["input_tokens"]),
             format_tokens(totals["output_tokens"]),
+            format_tokens(totals.get("cache_read_tokens", 0)),
+            format_tokens(totals.get("cache_write_tokens", 0)),
             format_tokens(totals["total_tokens"]),
             f"[bold green]{format_cost(totals['cost'])}[/bold green]",
             str(totals["requests"]),

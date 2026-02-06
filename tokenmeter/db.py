@@ -19,6 +19,8 @@ class UsageRecord:
     cost: float
     source: str  # 'manual', 'import', 'proxy'
     app: Optional[str]  # Application name (e.g., 'claude-code', 'cursor')
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
 
 
 DB_PATH = Path.home() / ".tokenmeter" / "usage.db"
@@ -46,9 +48,22 @@ def init_db() -> sqlite3.Connection:
             output_tokens INTEGER NOT NULL,
             cost REAL NOT NULL,
             source TEXT NOT NULL DEFAULT 'manual',
-            app TEXT
+            app TEXT,
+            cache_read_tokens INTEGER DEFAULT 0,
+            cache_write_tokens INTEGER DEFAULT 0
         )
     """)
+    
+    # Migration: Add cache columns if they don't exist (for existing databases)
+    try:
+        conn.execute("ALTER TABLE usage ADD COLUMN cache_read_tokens INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    
+    try:
+        conn.execute("ALTER TABLE usage ADD COLUMN cache_write_tokens INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
     
     conn.execute("""
         CREATE INDEX IF NOT EXISTS idx_usage_timestamp ON usage(timestamp)
@@ -70,6 +85,8 @@ def log_usage(
     source: str = "manual",
     app: Optional[str] = None,
     timestamp: Optional[datetime] = None,
+    cache_read_tokens: int = 0,
+    cache_write_tokens: int = 0,
 ) -> int:
     """Log a usage record and return the ID."""
     conn = init_db()
@@ -77,10 +94,10 @@ def log_usage(
     
     cursor = conn.execute(
         """
-        INSERT INTO usage (timestamp, provider, model, input_tokens, output_tokens, cost, source, app)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO usage (timestamp, provider, model, input_tokens, output_tokens, cost, source, app, cache_read_tokens, cache_write_tokens)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (ts.isoformat(), provider, model, input_tokens, output_tokens, cost, source, app)
+        (ts.isoformat(), provider, model, input_tokens, output_tokens, cost, source, app, cache_read_tokens, cache_write_tokens)
     )
     conn.commit()
     record_id = cursor.lastrowid
@@ -118,8 +135,19 @@ def get_usage(
     rows = conn.execute(query, params).fetchall()
     conn.close()
     
-    return [
-        UsageRecord(
+    records = []
+    for row in rows:
+        # Handle cache tokens which may not exist in older databases
+        try:
+            cache_read = row["cache_read_tokens"] or 0
+        except (KeyError, IndexError):
+            cache_read = 0
+        try:
+            cache_write = row["cache_write_tokens"] or 0
+        except (KeyError, IndexError):
+            cache_write = 0
+        
+        records.append(UsageRecord(
             id=row["id"],
             timestamp=datetime.fromisoformat(row["timestamp"]),
             provider=row["provider"],
@@ -129,9 +157,10 @@ def get_usage(
             cost=row["cost"],
             source=row["source"],
             app=row["app"],
-        )
-        for row in rows
-    ]
+            cache_read_tokens=cache_read,
+            cache_write_tokens=cache_write,
+        ))
+    return records
 
 
 def get_summary(
@@ -159,12 +188,16 @@ def get_summary(
             by_provider[r.provider] = {
                 "input_tokens": 0,
                 "output_tokens": 0,
+                "cache_read_tokens": 0,
+                "cache_write_tokens": 0,
                 "total_tokens": 0,
                 "cost": 0.0,
                 "requests": 0,
             }
         by_provider[r.provider]["input_tokens"] += r.input_tokens
         by_provider[r.provider]["output_tokens"] += r.output_tokens
+        by_provider[r.provider]["cache_read_tokens"] += r.cache_read_tokens
+        by_provider[r.provider]["cache_write_tokens"] += r.cache_write_tokens
         by_provider[r.provider]["total_tokens"] += r.input_tokens + r.output_tokens
         by_provider[r.provider]["cost"] += r.cost
         by_provider[r.provider]["requests"] += 1
@@ -172,6 +205,8 @@ def get_summary(
     # Totals
     total_input = sum(r.input_tokens for r in records)
     total_output = sum(r.output_tokens for r in records)
+    total_cache_read = sum(r.cache_read_tokens for r in records)
+    total_cache_write = sum(r.cache_write_tokens for r in records)
     total_cost = sum(r.cost for r in records)
     
     return {
@@ -182,6 +217,8 @@ def get_summary(
         "totals": {
             "input_tokens": total_input,
             "output_tokens": total_output,
+            "cache_read_tokens": total_cache_read,
+            "cache_write_tokens": total_cache_write,
             "total_tokens": total_input + total_output,
             "cost": total_cost,
             "requests": len(records),
@@ -214,11 +251,15 @@ def get_model_breakdown(period: str = "day") -> dict:
                 "model": r.model,
                 "input_tokens": 0,
                 "output_tokens": 0,
+                "cache_read_tokens": 0,
+                "cache_write_tokens": 0,
                 "cost": 0.0,
                 "requests": 0,
             }
         by_model[key]["input_tokens"] += r.input_tokens
         by_model[key]["output_tokens"] += r.output_tokens
+        by_model[key]["cache_read_tokens"] += r.cache_read_tokens
+        by_model[key]["cache_write_tokens"] += r.cache_write_tokens
         by_model[key]["cost"] += r.cost
         by_model[key]["requests"] += 1
     
