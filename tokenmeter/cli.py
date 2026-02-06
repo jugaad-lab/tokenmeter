@@ -14,6 +14,7 @@ from .pricing import calculate_cost, get_pricing, list_supported_models
 from .db import log_usage, get_summary, get_model_breakdown, get_usage
 from .importer import import_sessions, find_session_dirs
 from .time_utils import resolve_time_range
+from .fetcher import scan_env_vars, fetch_provider, fetch_all
 
 app = typer.Typer(
     name="tokenmeter",
@@ -517,6 +518,98 @@ def scan():
     console.print()
     console.print("Run [bold]tokenmeter import --auto[/bold] to import all, or [bold]--path <dir>[/bold] for specific ones.")
     console.print()
+
+
+@app.command()
+def fetch(
+    provider: Optional[str] = typer.Argument(None, help="Provider to fetch (anthropic, openai, google, azure). Omit for auto-detect."),
+    scan: bool = typer.Option(True, "--scan/--no-scan", help="Auto-scan env vars for API keys"),
+    dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Show what would be fetched without importing"),
+):
+    """Fetch usage from provider APIs (auto-detects API keys in environment)."""
+    import os
+    
+    console.print()
+    
+    if provider:
+        # Fetch from specific provider
+        provider = provider.lower()
+        env_vars = scan_env_vars()
+        env_var = env_vars.get(provider)
+        
+        if not env_var:
+            console.print(f"[red]❌ No API key found for {provider}[/red]")
+            console.print(f"Set one of: {', '.join(scan_env_vars.__code__.co_consts)}")
+            raise typer.Exit(1)
+        
+        api_key = os.environ.get(env_var)
+        console.print(f"[cyan]Fetching from {provider.capitalize()}...[/cyan]")
+        
+        result = fetch_provider(provider, api_key, dry_run=dry_run)
+        _print_fetch_result(provider, result)
+    else:
+        # Auto-detect and fetch from all providers
+        console.print("[bold]🔍 Scanning environment...[/bold]")
+        env_vars = scan_env_vars()
+        
+        found_any = False
+        for prov, env_var in env_vars.items():
+            if env_var:
+                console.print(f"  [green]✅[/green] {env_var} found")
+                found_any = True
+            else:
+                console.print(f"  [dim]❌ {prov.upper()}_API_KEY not set[/dim]")
+        
+        if not found_any:
+            console.print()
+            console.print("[yellow]No API keys found in environment.[/yellow]")
+            console.print("Set environment variables like ANTHROPIC_API_KEY or OPENAI_API_KEY")
+            raise typer.Exit(1)
+        
+        console.print()
+        
+        # Fetch from all available providers
+        results = fetch_all(dry_run=dry_run)
+        
+        total_imported = 0
+        total_cost = 0.0
+        
+        for prov, result in results.items():
+            if result.get("env_var"):
+                console.print(f"[cyan]Fetching from {prov.capitalize()}...[/cyan]")
+                _print_fetch_result(prov, result)
+                total_imported += result.get("records_imported", 0)
+                total_cost += result.get("total_cost", 0.0)
+        
+        console.print()
+        if total_imported > 0:
+            prefix = "[DRY RUN] " if dry_run else ""
+            console.print(f"[bold green]{prefix}✅ Fetching complete! {total_imported} records imported ({format_cost(total_cost)})[/bold green]")
+        else:
+            console.print("[bold]Fetching complete![/bold]")
+    
+    console.print()
+
+
+def _print_fetch_result(provider: str, result: dict):
+    """Print the result of a fetch operation."""
+    if result.get("no_api"):
+        console.print(f"  [yellow]ℹ️  {result.get('message', 'No usage API available')}[/yellow]")
+    elif result.get("not_found"):
+        pass  # Already printed during scan
+    elif not result.get("success"):
+        console.print(f"  [red]❌ {result.get('error', 'Unknown error')}[/red]")
+    else:
+        imported = result.get("records_imported", 0)
+        skipped = result.get("records_skipped", 0)
+        cost = result.get("total_cost", 0.0)
+        
+        if imported > 0:
+            console.print(f"  [green]✅ {imported} usage records imported ({format_cost(cost)})[/green]")
+        elif skipped > 0:
+            console.print(f"  [dim]⏭️  {skipped} records already imported[/dim]")
+        else:
+            console.print(f"  [dim]⚪ No new records[/dim]")
 
 
 @app.command()
