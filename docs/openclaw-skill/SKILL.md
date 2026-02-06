@@ -144,23 +144,75 @@ Options:
 
 ### Model Pricing (as of Feb 2026)
 
-| Model | Input (per 1M) | Output (per 1M) |
-|-------|----------------|-----------------|
-| claude-sonnet-4 | $3.00 | $15.00 |
-| claude-opus-4 | $15.00 | $75.00 |
-| claude-3.5-haiku | $0.80 | $4.00 |
+| Token Type | claude-sonnet-4 | claude-opus-4 | claude-3.5-haiku |
+|------------|----------------|---------------|------------------|
+| **Input** | $3.00/1M | $15.00/1M | $0.80/1M |
+| **Output** | $15.00/1M | $75.00/1M | $4.00/1M |
+| **Cache Write** | $3.75/1M | $18.75/1M | $1.00/1M |
+| **Cache Read** | $0.30/1M | $1.50/1M | $0.08/1M |
+
+### Understanding Cache Tokens
+
+**What are cache tokens?**
+
+OpenClaw (and Claude) use **prompt caching** to store parts of your conversation in memory. This means you don't send the same context repeatedly.
+
+**Two types of cache tokens:**
+
+1. **Cache WRITE tokens** - Tokens sent ONCE and stored in cache
+   - Example: Your entire codebase, documentation, system prompts
+   - Slightly more expensive than regular input (~25% markup)
+   - Only paid once, then reused for free (almost)
+
+2. **Cache READ tokens** - Tokens reused from cache
+   - You're NOT sending these again - Claude reads them from memory
+   - **90% cheaper** than regular input tokens
+   - This is where massive savings come from
+
+**Real example from our usage:**
+```
+This Month:
+Regular Input:    119.5K tokens  ($0.36)
+Regular Output:     3.8M tokens  ($57.00)
+Cache Write:      157.2M tokens  ($589.50 - paid once)
+Cache Read:     1,024.3M tokens  ($307.29 - 90% discount!)
+Total: $954.15
+```
+
+Without caching, we'd send ~1.2 BILLION tokens as regular input ($3,600+).
+With caching: We only pay $307 for those cache reads.
+
+**Savings: $3,293** from caching alone this month! 🎉
 
 ### Reading the Dashboard
 
 ```
 ╭─────────────────── tokenmeter ───────────────────╮
-│  TODAY  $12.45  (415,000 tokens)                 │
-│  WEEK   $87.30  (2,910,000 tokens)               │
+│  TODAY  $122.42  (396.9K tokens)                 │
+│  WEEK  $1142.22  (3.4M tokens)                   │
 ╰──────────────────────────────────────────────────╯
+
+Provider   Input   Output  Cache R  Cache W  Total    Cost
+───────────────────────────────────────────────────────────
+Anthropic  12.2K   384.7K  116.4M   13.1M    396.9K   $122.42
 ```
 
-- **TODAY**: Cost if you paid API rates today
-- **WEEK**: Cost if you paid API rates this week
+**Reading the columns:**
+- **Input**: Fresh tokens sent to Claude
+- **Output**: Tokens Claude generated
+- **Cache R**: Tokens reused from cache (READ)
+- **Cache W**: Tokens written to cache (WRITE)
+- **Total**: Input + Output (regular tokens only)
+- **Cost**: API-equivalent cost
+
+**Why Cache R is so large:** Every time you continue a conversation, Claude reads your entire context from cache instead of you sending it fresh. Over many turns, this adds up to billions of tokens reused.
+
+**Cost breakdown:**
+- Regular tokens: Expensive ($3-15 per 1M)
+- Cache Write: Slightly more expensive (~25% markup)
+- Cache Read: **90% cheaper** ($0.30-1.50 per 1M)
+
+This is why the cost stays low despite huge cache numbers.
 
 ### Comparing to Claude Max Plan
 

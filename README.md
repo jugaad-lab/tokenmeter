@@ -50,18 +50,25 @@ tokenmeter dashboard
 - **Azure OpenAI** (all deployed models)
 - **Google** (Gemini Pro, Ultra, Flash)
 
-### 📊 Rich CLI Dashboard
+### 📊 Rich CLI Dashboard with Cache Tracking
 ```
 ╭─────────────────── tokenmeter ───────────────────╮
-│  Today's Usage                                   │
-│  ──────────────────────────────────────────────  │
-│  Provider     Tokens      Cost                   │
-│  Anthropic    45,230      $0.68                  │
-│  OpenAI       12,100      $0.24                  │
-│  ──────────────────────────────────────────────  │
-│  Total        57,330      $0.92                  │
+│  TODAY  $122.42  (396.9K tokens)                 │
+│  WEEK  $1142.22  (3.4M tokens)                   │
 ╰──────────────────────────────────────────────────╯
+
+Provider   Input   Output  Cache R  Cache W  Total    Cost
+───────────────────────────────────────────────────────────
+Anthropic  12.2K   384.7K  116.4M   13.1M    396.9K   $122.42
 ```
+
+**Cache R** and **Cache W** show prompt caching usage:
+- **Cache Write**: Tokens stored in cache (paid once, slightly more expensive)
+- **Cache Read**: Tokens reused from cache (90% cheaper than regular input)
+
+This reveals the true value of OpenClaw/Claude's prompt caching. In this example:
+- 116.4M cache reads saved ~$350 vs sending as regular input
+- Cache reads are the #1 cost saver for heavy users
 
 ### 🔄 Automatic Import
 - Claude Code usage logs
@@ -72,7 +79,26 @@ tokenmeter dashboard
 - Daily/weekly/monthly trends
 - Cost by model breakdown
 - Input vs output token ratios
+- **Cache token tracking** (reads + writes)
 - Peak usage hours
+
+### 💾 Cache Token Tracking
+
+tokenmeter tracks **prompt caching** usage from OpenClaw and Claude:
+
+**What is prompt caching?**
+- Instead of sending your entire context every turn, Claude stores it in cache
+- You pay slightly more to WRITE to cache once
+- Then pay 90% LESS to READ from cache on subsequent turns
+
+**Real-world example:**
+```
+Without caching: 1 billion tokens × $3/M = $3,000
+With caching: 1 billion tokens × $0.30/M = $300
+Savings: $2,700
+```
+
+tokenmeter shows both cache reads and writes so you can see exactly how much you're saving.
 
 ## Configuration
 
