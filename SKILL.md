@@ -2,7 +2,7 @@
 name: tokenmeter
 description: "Track AI token usage and costs across providers. Import sessions, view dashboard, costs breakdown, and compare Max plan savings."
 user-invocable: true
-metadata: {"clawdbot":{"emoji":"📊"}}
+metadata: {"openclaw":{"emoji":"📊"}}
 ---
 
 # tokenmeter - AI Usage & Cost Tracking for OpenClaw
