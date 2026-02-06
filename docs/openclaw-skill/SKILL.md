@@ -17,29 +17,60 @@ All data stays local (SQLite at `~/.tokenmeter/usage.db`). No telemetry, no clou
 
 ## Installation
 
-### 1. Clone the repo
+**For bot/agent (admin runs once):**
 
 ```bash
-cd ~/clawd/skills
+cd ~/clawd
 git clone https://github.com/jugaad-lab/tokenmeter.git
-cd tokenmeter
 ```
 
-### 2. Set up Python environment
+The repo contains:
+- Python package (tokenmeter CLI)
+- Documentation (this file is in `docs/openclaw-skill/`)
+- Example scripts
+
+**First-time setup (bot does this automatically when needed):**
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e .
+cd ~/clawd/tokenmeter
+
+# Setup venv if it doesn't exist
+if [ ! -d ".venv" ]; then
+  python3 -m venv .venv
+  source .venv/bin/activate
+  pip install -e .
+fi
 ```
 
-### 3. Verify installation
+**After first setup:** Bot just activates venv and runs commands.
+
+---
+
+## Usage (Bot Commands)
+
+**Standard pattern for all tokenmeter commands:**
 
 ```bash
-tokenmeter dashboard
+cd ~/clawd/tokenmeter && source .venv/bin/activate && tokenmeter [command]
 ```
 
-You should see an empty dashboard (no usage yet).
+**Examples:**
+```bash
+# Import latest usage
+cd ~/clawd/tokenmeter && source .venv/bin/activate && tokenmeter import --auto
+
+# Quick overview
+cd ~/clawd/tokenmeter && source .venv/bin/activate && tokenmeter dashboard
+
+# Weekly breakdown
+cd ~/clawd/tokenmeter && source .venv/bin/activate && tokenmeter costs --period week
+```
+
+**Tip:** Bot can create an alias for shorter commands:
+```bash
+alias tm='cd ~/clawd/tokenmeter && source .venv/bin/activate && tokenmeter'
+# Then just: tm dashboard
+```
 
 ---
 
