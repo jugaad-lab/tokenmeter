@@ -92,6 +92,7 @@ def import_sessions(
     app_name: str = "clawdbot",
     dry_run: bool = False,
     incremental: Optional[bool] = None,
+    _checkpoint: Optional[dict] = None,
 ) -> dict:
     """Import usage from Clawdbot/OpenClaw JSONL session files.
     
@@ -100,6 +101,8 @@ def import_sessions(
     
     When incremental=True (or None with existing checkpoint), uses the
     checkpoint system to only read new/changed data since the last import.
+    
+    Pass _checkpoint to share state across multiple calls (avoids overwriting).
     
     Returns a summary dict with counts and costs.
     """
@@ -111,12 +114,15 @@ def import_sessions(
     if not sessions_dir.exists():
         return {"error": f"Directory not found: {sessions_dir}", "imported": 0}
     
+    # Resolve symlinks to avoid scanning the same directory twice
+    sessions_dir = sessions_dir.resolve()
+    
     jsonl_files = list(sessions_dir.glob("*.jsonl"))
     if not jsonl_files:
         return {"error": f"No .jsonl files found in {sessions_dir}", "imported": 0}
     
-    # Determine if we should use incremental mode
-    checkpoint = load_checkpoint()
+    # Use shared checkpoint if provided, otherwise load from disk
+    checkpoint = _checkpoint if _checkpoint is not None else load_checkpoint()
     use_incremental = incremental if incremental is not None else bool(checkpoint.get("files"))
     
     conn = init_db()
@@ -142,11 +148,18 @@ def import_sessions(
         "incremental": use_incremental,
     }
     
-    # Prune checkpoint entries for deleted files
-    existing_file_paths = {str(f) for f in jsonl_files}
-    pruned = prune_deleted_files(checkpoint, existing_file_paths)
-    if pruned:
-        stats.setdefault("files_pruned", len(pruned))
+    # Prune checkpoint entries for deleted files — only prune files
+    # that were in THIS directory (don't touch entries from other directories)
+    existing_file_paths = {str(f.resolve()) for f in jsonl_files}
+    dir_prefix = str(sessions_dir.resolve())
+    pruned_keys = [
+        k for k in checkpoint.get("files", {})
+        if k.startswith(dir_prefix) and k not in existing_file_paths
+    ]
+    for k in pruned_keys:
+        del checkpoint["files"][k]
+    if pruned_keys:
+        stats.setdefault("files_pruned", len(pruned_keys))
     
     for jsonl_file in sorted(jsonl_files):
         stats["files_scanned"] += 1
@@ -302,38 +315,48 @@ def import_sessions(
     
     if not dry_run:
         conn.commit()
-        # Save checkpoint atomically
-        save_checkpoint(checkpoint)
+        # Only save checkpoint if we own it (not shared from caller)
+        if _checkpoint is None:
+            save_checkpoint(checkpoint)
     conn.close()
     
     return stats
 
 
 def find_session_dirs() -> list[dict]:
-    """Auto-discover Clawdbot/OpenClaw session directories."""
+    """Auto-discover Clawdbot/OpenClaw session directories.
+    
+    Resolves symlinks to avoid scanning the same directory twice
+    (e.g., ~/.openclaw → ~/.clawdbot).
+    """
     home = Path.home()
     found = []
+    seen_resolved = set()  # Track resolved paths to dedup symlinks
     
     # Standard Clawdbot locations
     for base in [home / ".clawdbot", home / ".openclaw"]:
-        if not base.exists():
-            # Check if it's a symlink
-            if base.is_symlink():
-                base = base.resolve()
-            else:
-                continue
+        if not base.exists() and not base.is_symlink():
+            continue
         
-        agents_dir = base / "agents"
+        # Resolve symlinks to canonical path
+        resolved_base = base.resolve()
+        
+        agents_dir = resolved_base / "agents"
         if agents_dir.exists():
             for agent_dir in agents_dir.iterdir():
                 sessions_dir = agent_dir / "sessions"
                 if sessions_dir.exists():
+                    resolved_sessions = sessions_dir.resolve()
+                    if str(resolved_sessions) in seen_resolved:
+                        continue  # Skip duplicate (symlink target already scanned)
+                    seen_resolved.add(str(resolved_sessions))
+                    
                     jsonl_count = len(list(sessions_dir.glob("*.jsonl")))
                     if jsonl_count > 0:
                         found.append({
-                            "path": sessions_dir,
+                            "path": resolved_sessions,
                             "agent": agent_dir.name,
-                            "base": base.name,
+                            "base": resolved_base.name,
                             "files": jsonl_count,
                         })
     
@@ -341,14 +364,17 @@ def find_session_dirs() -> list[dict]:
     claude_dir = home / ".claude" / "projects"
     if claude_dir.exists():
         for project_dir in claude_dir.rglob("*.jsonl"):
-            parent = project_dir.parent
-            if parent not in [d["path"] for d in found]:
-                jsonl_count = len(list(parent.glob("*.jsonl")))
-                found.append({
-                    "path": parent,
-                    "agent": f"claude-code/{parent.name}",
-                    "base": ".claude",
-                    "files": jsonl_count,
-                })
+            parent = project_dir.parent.resolve()
+            if str(parent) in seen_resolved:
+                continue
+            seen_resolved.add(str(parent))
+            
+            jsonl_count = len(list(parent.glob("*.jsonl")))
+            found.append({
+                "path": parent,
+                "agent": f"claude-code/{parent.name}",
+                "base": ".claude",
+                "files": jsonl_count,
+            })
     
     return found

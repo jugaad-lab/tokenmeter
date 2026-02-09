@@ -387,6 +387,10 @@ def import_cmd(
         if full:
             console.print("[yellow]⚠️  Full re-scan mode (ignoring checkpoint)[/yellow]\n")
         
+        # Load checkpoint once and share across all import_sessions calls
+        from .checkpoint import load_checkpoint, save_checkpoint
+        shared_checkpoint = load_checkpoint()
+        
         total_imported = 0
         total_cost = 0.0
         total_skipped = 0
@@ -394,7 +398,7 @@ def import_cmd(
         for d in dirs:
             agent_app = "claude-code" if ".claude" in str(d["path"]) else app_name
             console.print(f"[cyan]Importing {d['agent']}...[/cyan]")
-            result = import_sessions(d["path"], app_name=agent_app, dry_run=dry_run, incremental=inc_mode)
+            result = import_sessions(d["path"], app_name=agent_app, dry_run=dry_run, incremental=inc_mode, _checkpoint=shared_checkpoint)
             total_imported += result["records_imported"]
             total_cost += result["total_cost"]
             
@@ -413,12 +417,17 @@ def import_cmd(
             else:
                 console.print(f"  ⚪ No new records")
         
+        # Save shared checkpoint once after all directories processed
+        if not dry_run:
+            save_checkpoint(shared_checkpoint)
+        
         console.print()
         prefix = "[DRY RUN] " if dry_run else ""
         skip_note = f"\nFiles skipped (unchanged): {total_skipped}" if total_skipped > 0 else ""
+        checkpoint_note = f"\nCheckpoint: {len(shared_checkpoint.get('files', {}))} files tracked" if not dry_run else ""
         console.print(Panel(
             f"{prefix}Imported [bold green]{total_imported}[/bold green] records\n"
-            f"Total cost: [bold green]{format_cost(total_cost)}[/bold green]{skip_note}",
+            f"Total cost: [bold green]{format_cost(total_cost)}[/bold green]{skip_note}{checkpoint_note}",
             title="🪙 Import Complete",
             border_style="green",
         ))
