@@ -358,6 +358,8 @@ def import_cmd(
     app_name: str = typer.Option("clawdbot", "--app", "-a", help="App name (clawdbot, openclaw, claude-code)"),
     dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Show what would be imported without writing"),
     auto: bool = typer.Option(False, "--auto", help="Auto-discover and import all session directories"),
+    full: bool = typer.Option(False, "--full", help="Force full re-scan (ignore checkpoint)"),
+    incremental: Optional[bool] = typer.Option(None, "--incremental/--no-incremental", help="Use incremental import (default: auto-detect from checkpoint)"),
 ):
     """Import usage from Clawdbot/OpenClaw session files."""
     from pathlib import Path as P
@@ -380,18 +382,32 @@ def import_cmd(
             console.print(f"  📁 {d['base']}/{d['agent']} — {d['files']} files")
         console.print()
         
+        # Determine incremental mode
+        inc_mode = False if full else incremental
+        if full:
+            console.print("[yellow]⚠️  Full re-scan mode (ignoring checkpoint)[/yellow]\n")
+        
         total_imported = 0
         total_cost = 0.0
+        total_skipped = 0
         
         for d in dirs:
             agent_app = "claude-code" if ".claude" in str(d["path"]) else app_name
             console.print(f"[cyan]Importing {d['agent']}...[/cyan]")
-            result = import_sessions(d["path"], app_name=agent_app, dry_run=dry_run)
+            result = import_sessions(d["path"], app_name=agent_app, dry_run=dry_run, incremental=inc_mode)
             total_imported += result["records_imported"]
             total_cost += result["total_cost"]
             
+            skipped = result.get("files_skipped", 0)
+            total_skipped += skipped
+            
             if result["records_imported"] > 0:
-                console.print(f"  ✅ {result['records_imported']} records ({format_cost(result['total_cost'])})")
+                inc_label = ""
+                if result.get("incremental"):
+                    inc_label = f" [dim]({result.get('files_incremental', 0)} incremental, {result.get('files_full', 0)} full, {skipped} skipped)[/dim]"
+                console.print(f"  ✅ {result['records_imported']} records ({format_cost(result['total_cost'])}){inc_label}")
+            elif skipped > 0:
+                console.print(f"  ⏭️  {skipped} files unchanged (checkpoint)")
             elif result.get("records_skipped_dup", 0) > 0:
                 console.print(f"  ⏭️  {result['records_skipped_dup']} already imported")
             else:
@@ -399,9 +415,10 @@ def import_cmd(
         
         console.print()
         prefix = "[DRY RUN] " if dry_run else ""
+        skip_note = f"\nFiles skipped (unchanged): {total_skipped}" if total_skipped > 0 else ""
         console.print(Panel(
             f"{prefix}Imported [bold green]{total_imported}[/bold green] records\n"
-            f"Total cost: [bold green]{format_cost(total_cost)}[/bold green]",
+            f"Total cost: [bold green]{format_cost(total_cost)}[/bold green]{skip_note}",
             title="🪙 Import Complete",
             border_style="green",
         ))
@@ -423,10 +440,13 @@ def import_cmd(
     
     sessions_dir = P(path)
     prefix = "[DRY RUN] " if dry_run else ""
+    inc_mode = False if full else incremental
     console.print(f"{prefix}Importing from: [bold]{sessions_dir}[/bold]")
+    if full:
+        console.print("[yellow]⚠️  Full re-scan mode[/yellow]")
     console.print()
     
-    result = import_sessions(sessions_dir, app_name=app_name, dry_run=dry_run)
+    result = import_sessions(sessions_dir, app_name=app_name, dry_run=dry_run, incremental=inc_mode)
     
     if result.get("error"):
         console.print(f"[red]Error: {result['error']}[/red]")

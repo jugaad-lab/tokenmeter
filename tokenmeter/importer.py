@@ -91,14 +91,23 @@ def import_sessions(
     sessions_dir: Path,
     app_name: str = "clawdbot",
     dry_run: bool = False,
+    incremental: Optional[bool] = None,
 ) -> dict:
     """Import usage from Clawdbot/OpenClaw JSONL session files.
     
     Scans all .jsonl files in the given directory, extracts usage records,
     deduplicates against previously imported data, and logs new records.
     
+    When incremental=True (or None with existing checkpoint), uses the
+    checkpoint system to only read new/changed data since the last import.
+    
     Returns a summary dict with counts and costs.
     """
+    from .checkpoint import (
+        load_checkpoint, save_checkpoint, classify_file,
+        update_file_checkpoint, prune_deleted_files,
+    )
+    
     if not sessions_dir.exists():
         return {"error": f"Directory not found: {sessions_dir}", "imported": 0}
     
@@ -106,11 +115,18 @@ def import_sessions(
     if not jsonl_files:
         return {"error": f"No .jsonl files found in {sessions_dir}", "imported": 0}
     
+    # Determine if we should use incremental mode
+    checkpoint = load_checkpoint()
+    use_incremental = incremental if incremental is not None else bool(checkpoint.get("files"))
+    
     conn = init_db()
     _ensure_dedup_table(conn)
     
     stats = {
         "files_scanned": 0,
+        "files_skipped": 0,
+        "files_incremental": 0,
+        "files_full": 0,
         "records_found": 0,
         "records_imported": 0,
         "records_skipped_dup": 0,
@@ -123,13 +139,38 @@ def import_sessions(
         "total_api_equivalent_cost": 0.0,
         "by_model": {},
         "errors": [],
+        "incremental": use_incremental,
     }
+    
+    # Prune checkpoint entries for deleted files
+    existing_file_paths = {str(f) for f in jsonl_files}
+    pruned = prune_deleted_files(checkpoint, existing_file_paths)
+    if pruned:
+        stats.setdefault("files_pruned", len(pruned))
     
     for jsonl_file in sorted(jsonl_files):
         stats["files_scanned"] += 1
         
+        # Classify file for incremental import
+        if use_incremental:
+            action, byte_offset = classify_file(jsonl_file, checkpoint)
+        else:
+            action, byte_offset = "full", 0
+        
+        if action == "skip":
+            stats["files_skipped"] += 1
+            continue
+        elif action == "incremental":
+            stats["files_incremental"] += 1
+        else:
+            stats["files_full"] += 1
+        
         try:
             with open(jsonl_file, "r") as f:
+                # Seek to byte offset for incremental reads
+                if action == "incremental" and byte_offset > 0:
+                    f.seek(byte_offset)
+                
                 for line_num, line in enumerate(f, 1):
                     line = line.strip()
                     if not line:
@@ -247,12 +288,22 @@ def import_sessions(
                         )
                     
                     stats["records_imported"] += 1
+                
+                # Track final byte position for checkpoint (inside with block)
+                final_byte_offset = f.tell()
                     
         except Exception as e:
             stats["errors"].append(f"{jsonl_file.name}: {e}")
+            continue
+        
+        # Update checkpoint for this file
+        if not dry_run:
+            update_file_checkpoint(checkpoint, jsonl_file, final_byte_offset)
     
     if not dry_run:
         conn.commit()
+        # Save checkpoint atomically
+        save_checkpoint(checkpoint)
     conn.close()
     
     return stats
