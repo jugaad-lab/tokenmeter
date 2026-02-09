@@ -2,6 +2,11 @@
   <img src="assets/logo.png" alt="tokenmeter logo" width="200" />
 </p>
 
+[![ClawHub](https://img.shields.io/badge/ClawHub-tokenmeter-teal)](https://clawhub.ai/skills/tokenmeter)
+
+**Install via ClawHub:** `clawhub install tokenmeter`
+
+
 # 🪙 tokenmeter
 
 **Track your AI API usage and costs across all providers — locally, privately.**
