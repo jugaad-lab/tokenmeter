@@ -9,6 +9,8 @@
 
 # 🪙 tokenmeter
 
+> ⭐ **Found this useful? [Star this repo](https://github.com/jugaad-lab/tokenmeter)** to help others discover it!
+
 **Track your AI API usage and costs across all providers — locally, privately.**
 
 ![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)
@@ -172,6 +174,12 @@ Each usage record contains:
 - [ ] Prometheus metrics export
 - [ ] Slack/Discord alerts
 - [ ] Team usage aggregation (self-hosted)
+
+## 🤝 Contributing
+
+Found a bug? Have an idea? [Open an issue](https://github.com/jugaad-lab/tokenmeter/issues) or submit a PR!
+
+If this tool saved you time, please ⭐ **star this repo** — it helps others find it.
 
 ## License
 
